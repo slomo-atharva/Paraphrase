@@ -23,6 +23,14 @@ export default function App() {
   const [isSubscribed, setIsSubscribed] = useState<boolean | null>(null);
   const [isPricingOpen, setIsPricingOpen] = useState(false);
 
+  const [inputAiScore, setInputAiScore] = useState<number | null>(null);
+  const [outputAiScore, setOutputAiScore] = useState<number | null>(null);
+  const [isDetectingInput, setIsDetectingInput] = useState(false);
+  const [isDetectingOutput, setIsDetectingOutput] = useState(false);
+  
+  const [selectedTone, setSelectedTone] = useState('Standard');
+  const tones = ['Standard', 'Friendly', 'Professional', 'Narrator'];
+
   useEffect(() => {
     // Check subscription status on load
     fetch('/api/user', {
@@ -50,6 +58,21 @@ export default function App() {
     
     setIsLoading(true);
     setError('');
+    setOutputText('');
+    setInputAiScore(null);
+    setOutputAiScore(null);
+
+    // Fire off input score detection
+    setIsDetectingInput(true);
+    const detectInputPromise = fetch('/api/detect-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body: JSON.stringify({ text: inputText })
+    })
+      .then(res => res.json())
+      .then(data => setInputAiScore(data.aiPercentage))
+      .catch(err => console.error("Input AI Detection Failed:", err))
+      .finally(() => setIsDetectingInput(false));
     
     try {
       const response = await fetch('/api/humanize', {
@@ -58,7 +81,7 @@ export default function App() {
           'Content-Type': 'application/json',
           'x-user-id': userId
         },
-        body: JSON.stringify({ text: inputText })
+        body: JSON.stringify({ text: inputText, tone: selectedTone })
       });
 
       const data = await response.json();
@@ -67,7 +90,21 @@ export default function App() {
         throw new Error(data.error || 'Failed to humanize text');
       }
 
-      setOutputText(data.text);
+      const generatedText = data.text;
+      setOutputText(generatedText);
+
+      // Now fire off the output detection
+      setIsDetectingOutput(true);
+      fetch('/api/detect-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+        body: JSON.stringify({ text: generatedText })
+      })
+        .then(res => res.json())
+        .then(data => setOutputAiScore(data.aiPercentage))
+        .catch(err => console.error("Output AI Detection Failed:", err))
+        .finally(() => setIsDetectingOutput(false));
+
     } catch (err: any) {
       setError(err.message || 'An error occurred while humanizing the text.');
     } finally {
@@ -144,14 +181,49 @@ export default function App() {
           </div>
         </div>
 
+        {/* Tone Selector */}
+        <div className="flex bg-white rounded-xl shadow-sm border border-zinc-200 p-1.5 w-full sm:w-max mx-auto sm:mx-0">
+          {tones.map(tone => (
+            <button
+              key={tone}
+              onClick={() => setSelectedTone(tone)}
+              className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+                selectedTone === tone 
+                  ? 'bg-zinc-900 text-white shadow-sm' 
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+              }`}
+            >
+              {tone}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
           {/* Input */}
           <div className={`flex-1 flex flex-col bg-white rounded-2xl shadow-sm border overflow-hidden transition-colors ${isOverLimit ? 'border-red-300 ring-1 ring-red-300' : 'border-zinc-200'}`}>
             <div className={`px-5 py-3 border-b flex justify-between items-center ${isOverLimit ? 'bg-red-50/50 border-red-100' : 'bg-zinc-50/50 border-zinc-100'}`}>
               <h2 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">Input AI Text</h2>
-              <span className={`text-xs font-mono px-2.5 py-1 rounded-md ${isOverLimit ? 'bg-red-100 text-red-700 font-bold' : 'bg-zinc-100 text-zinc-500'}`}>
-                {wordCount} {isSubscribed ? 'words' : '/ 100 words'}
-              </span>
+              <div className="flex items-center gap-3">
+                {isDetectingInput && (
+                  <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-100/80 px-2 py-1 rounded-md border border-zinc-200/50">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Detecting AI...
+                  </span>
+                )}
+                {inputAiScore !== null && !isDetectingInput && (
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-md border ${
+                    inputAiScore > 50 
+                      ? 'bg-red-50 text-red-600 border-red-200' 
+                      : inputAiScore > 20 
+                        ? 'bg-amber-50 text-amber-600 border-amber-200' 
+                        : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                  }`}>
+                    AI Detected: {inputAiScore}%
+                  </span>
+                )}
+                <span className={`text-xs font-mono px-2.5 py-1 rounded-md ${isOverLimit ? 'bg-red-100 text-red-700 font-bold' : 'bg-zinc-100 text-zinc-500'}`}>
+                  {wordCount} {isSubscribed ? 'words' : '/ 100 words'}
+                </span>
+              </div>
             </div>
             <textarea
               value={inputText}
@@ -166,6 +238,22 @@ export default function App() {
             <div className="px-5 py-3 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
               <h2 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">Humanized Output</h2>
               <div className="flex items-center gap-3">
+                {isDetectingOutput && (
+                  <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-100/80 px-2 py-1 rounded-md border border-zinc-200/50">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Detecting AI...
+                  </span>
+                )}
+                {outputAiScore !== null && !isDetectingOutput && (
+                   <span className={`text-xs font-semibold px-2 py-1 rounded-md border ${
+                    outputAiScore > 50 
+                      ? 'bg-red-50 text-red-600 border-red-200' 
+                      : outputAiScore > 20 
+                        ? 'bg-amber-50 text-amber-600 border-amber-200' 
+                        : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                  }`}>
+                    AI Detected: {outputAiScore}%
+                  </span>
+                )}
                 <span className="text-xs font-mono text-zinc-500 bg-zinc-100 px-2.5 py-1 rounded-md">{getWordCount(outputText)} words</span>
                 <button 
                   onClick={handleCopy}

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
@@ -30,7 +31,7 @@ app.use((req, res, next) => {
 });
 
 app.post('/api/humanize', async (req, res) => {
-  const { text } = req.body;
+  const { text, tone = 'Standard' } = req.body;
   const user = req.user;
 
   if (!user) {
@@ -43,34 +44,94 @@ app.post('/api/humanize', async (req, res) => {
     return res.status(403).json({ error: 'Subscription required for over 100 words.' });
   }
 
+  let toneInstruction = "Write this as a fast, conversational rewrite while maintaining the exact original point of view.";
+  if (tone === 'Friendly') {
+    toneInstruction = "Make the tone warm, approachable, and encouraging. Use highly conversational, inviting language that puts the reader at ease, but strictly preserve the original author's point of view and perspective.";
+  } else if (tone === 'Professional') {
+    toneInstruction = "Make the tone sharp, articulate, and professional. It should sound intelligent and authoritative, yet still clear, without resorting to verbose academic jargon. Strictly preserve the original author's point of view and perspective.";
+  } else if (tone === 'Narrator') {
+    toneInstruction = "Give the text a slight storytelling quality—making the progression of ideas flow smoothly and vividly. Crucially, do NOT insert 'I', 'we', or 'us'; maintain the exact original point of view.";
+  }
+
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-2.5-pro",
       contents: text,
       config: {
-        systemInstruction: `Role: You are an expert human copywriter who writes in a highly conversational, punchy, and structurally unpredictable style. Your ONLY goal is to rewrite the provided text so that it registers as 0% AI-generated on all advanced AI detectors.
+        systemInstruction: `Role: You are an expert human copywriter. Your ONLY goal is to rewrite the provided text so that it registers as 0% AI-generated on all advanced AI detectors.
 
-Directives for 0% Detection:
+Tone Directive: ${toneInstruction}
 
-1. Asymmetrical Paragraphs (Crucial): Humans write in uneven blocks. Never make two paragraphs the same length. Mix a sprawling, detailed 5-sentence paragraph immediately followed by a jarring 1-sentence paragraph.
+Constraints for Extreme AI Evasion (Perplexity & Burstiness):
 
-2. Target Flesch Reading Ease (70+): Keep it punchy. Use plain, everyday English. Strip out all corporate jargon, buzzwords, and complex academic vocabulary.
+1. High Burstiness (Mandatory): You MUST radically vary your sentence lengths to create a high standard deviation (Burstiness). Never write three sentences of similar length in a row. Follow a sprawling, complex 30-word sentence immediately with a jarring 3-word or 5-word sentence. 
 
-3. Ban "Hedging" and "Fluff": AI constantly hedges and uses predictable transitions. STRICTLY FORBIDDEN PHRASES: "In conclusion," "It is important to note," "Overall," "While it may seem," "In today's digital landscape," "Moreover," "Furthermore," "Crucial," and "Tapestry."
+2. High Perplexity (Mandatory): Do NOT use predictable AI sentence structures. Avoid prepositional phrases at the start of sentences ("In the realm of", "As a", "Located in"). 
 
-4. Human Imperfections & Pacing: Start sentences with conjunctions (And, But, Because, So) frequently. Use em-dashes (—) to connect thoughts abruptly. Use natural contractions aggressively (they're, won't, it's, I've).
+3. Vocabulary Blacklist: Use plain, precise, everyday English. STRICTLY FORBIDDEN WORDS: "delve", "tapestry", "crucial", "moreover", "furthermore", "overall", "in conclusion", "testament", "orchestrate", "seamless", "elevate", "nuance", "merely", "foster", "nurture", "champion".
 
-5. Zero Passive Voice: Rewrite everything in the active voice. (e.g., Instead of "The application was designed to...", write "We designed the application to...").
+4. Human Flaws & Informality: Start sentences with conjunctions (And, But, Yet) frequently. Use em-dashes (—) to disrupt the flow of a sentence organically. Be concise and direct, removing all filler.
 
-6. Formatting: Output ONLY the rewritten text. Do not include any introductory or concluding remarks.`,
-        temperature: 0.85,
+5. Point of View: Maintain the EXACT original perspective (first-person, third-person, etc). If the text is informational and third-person, keep it that way. Do NOT insert yourself into the text as a narrator or participant. Do NOT summarize the text at the end.
+
+6. Formatting: Output ONLY the rewritten text. Do not include any introductory remarks.`,
+        temperature: 1.3,
+        topP: 0.95,
+        topK: 60,
       },
     });
 
     res.json({ text: response.text || "" });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("Gemini API Error:", error);
+    res.status(500).json({ error: error.message || "Failed to call Gemini API" });
+  }
+});
+
+app.post('/api/detect-ai', async (req, res) => {
+  const { text } = req.body;
+  const user = req.user;
+
+  if (!user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (!text || !text.trim()) {
+    return res.json({ aiPercentage: 0 });
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-pro",
+      contents: text,
+      config: {
+        systemInstruction: `Role: You are an expert AI content detector.
+Your task is to analyze the provided text and determine what percentage of it was generated by an AI model like ChatGPT or Claude. Look for common AI tropes: perfect grammar but lack of substance, "hedging" language, overuse of words like "crucial", "tapestry", "delve", predictable transitions ("Furthermore", "In conclusion"), and symmetrical paragraph lengths.
+If it looks highly predictable and robotic or uses these tropes, give it a score of 80 to 100.
+If it has asymmetrical paragraphs, uses natural contractions, starts sentences with conjunctions (And, But), uses active voice, and sounds conversational, give it a low score (0 to 20).
+Output ONLY a single integer from 0 to 100 representing the probability or percentage.
+Do not include a percent sign, any letters, extra words, or explanations. Just the number.`,
+        temperature: 0.1, // Keep it deterministic
+      },
+    });
+
+    const outputText = response.text?.trim() || "0";
+    let aiPercentage = parseInt(outputText, 10);
+    
+    // Fallback if the AI returned something unparsable
+    if (isNaN(aiPercentage)) {
+      aiPercentage = 0;
+    }
+    
+    // Clamp to 0-100
+    aiPercentage = Math.max(0, Math.min(100, aiPercentage));
+
+    res.json({ aiPercentage });
+  } catch (error: any) {
+    console.error("Gemini AI Detection Error:", error);
+    res.status(500).json({ error: error.message || "Failed to detect AI probability" });
   }
 });
 
