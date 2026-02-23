@@ -2,8 +2,8 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
-// Ensure the data directory exists
-const dataDir = path.join(process.cwd(), 'data');
+// Ensure we don't try to write to read-only dirs in Vercel
+const dataDir = process.env.VERCEL ? '/tmp' : path.join(process.cwd(), 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
