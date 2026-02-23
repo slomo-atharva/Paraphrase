@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Copy, Sparkles, Loader2, Check, ArrowRightLeft, Lock } from 'lucide-react';
 import PricingModal from './components/PricingModal';
+import { Analytics } from '@vercel/analytics/react';
 
 // Generate a simple unique ID for the user session if one doesn't exist
 const getUserId = () => {
@@ -293,6 +294,7 @@ export default function App() {
         onClose={() => setIsPricingOpen(false)} 
         userId={userId}
       />
+      <Analytics />
     </div>
   );
 }
