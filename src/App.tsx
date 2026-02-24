@@ -21,7 +21,10 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   
   const [userId] = useState(getUserId());
-  const [isSubscribed, setIsSubscribed] = useState<boolean | null>(null);
+  const [isSubscribed, setIsSubscribed] = useState<boolean | null>(() => {
+    const cached = localStorage.getItem('app_user_subscribed');
+    return cached ? cached === 'true' : null;
+  });
   const [isPricingOpen, setIsPricingOpen] = useState(false);
 
   const [inputAiScore, setInputAiScore] = useState<number | null>(null);
@@ -41,6 +44,7 @@ export default function App() {
       .then(data => {
         if (data.is_subscribed !== undefined) {
           setIsSubscribed(data.is_subscribed);
+          localStorage.setItem('app_user_subscribed', String(data.is_subscribed));
         }
       })
       .catch(err => console.error('Failed to fetch user status:', err));
