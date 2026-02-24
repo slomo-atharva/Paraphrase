@@ -1,4 +1,3 @@
-import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 
@@ -8,25 +7,43 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const db = new Database(path.join(dataDir, 'app.db'));
+const dbPath = path.join(dataDir, 'app.json');
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    is_subscribed BOOLEAN DEFAULT 0,
-    subscription_id TEXT
-  )
-`);
+function readDb() {
+  try {
+    if (fs.existsSync(dbPath)) {
+      const data = fs.readFileSync(dbPath, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Error reading DB:', e);
+  }
+  return { users: {} };
+}
+
+function writeDb(data: any) {
+  try {
+    fs.writeFileSync(dbPath, JSON.stringify(data));
+  } catch (e) {
+    console.error('Error writing DB:', e);
+  }
+}
 
 export function getUser(id: string) {
-  let user = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any;
-  if (!user) {
-    db.prepare('INSERT INTO users (id) VALUES (?)').run(id);
-    user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const db = readDb();
+  if (!db.users[id]) {
+    db.users[id] = { id, is_subscribed: false, subscription_id: null };
+    writeDb(db);
   }
-  return user;
+  return db.users[id];
 }
 
 export function updateUserSubscription(id: string, isSubscribed: boolean, subscriptionId?: string) {
-  db.prepare('UPDATE users SET is_subscribed = ?, subscription_id = ? WHERE id = ?').run(isSubscribed ? 1 : 0, subscriptionId || null, id);
+  const db = readDb();
+  if (!db.users[id]) {
+    db.users[id] = { id, is_subscribed: false, subscription_id: null };
+  }
+  db.users[id].is_subscribed = isSubscribed;
+  db.users[id].subscription_id = subscriptionId || null;
+  writeDb(db);
 }
