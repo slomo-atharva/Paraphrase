@@ -5,11 +5,11 @@ import { getUser, updateUserSubscription } from './server/db';
 import crypto from 'crypto';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3005;
 
 // Need to parse raw body for webhooks before express.json()
 app.use('/api/webhooks/lemonsqueezy', express.raw({ type: 'application/json' }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // Extend Express Request type
 declare global {
@@ -20,11 +20,18 @@ declare global {
   }
 }
 
-// Mock authentication middleware (using a simple client-generated ID for demo)
-app.use((req, res, next) => {
+// Request logging middleware
+app.use('/api/*', (req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  console.log('Headers:', JSON.stringify(req.headers));
+  next();
+});
+
+// Mock authentication middleware
+app.use(async (req, res, next) => {
   const userId = req.headers['x-user-id'] as string;
   if (userId) {
-    req.user = getUser(userId);
+    req.user = await getUser(userId);
   }
   next();
 });
@@ -37,7 +44,7 @@ app.post('/api/humanize', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const wordCount = text.trim().split(/\\s+/).length;
+  const wordCount = text.trim().split(/\s+/).length;
 
   if (wordCount > 100 && !user.is_subscribed) {
     return res.status(403).json({ error: 'Subscription required for over 100 words.' });
@@ -53,9 +60,13 @@ app.post('/api/humanize', async (req, res) => {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not configured on the server.");
+    }
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
+      model: "gemini-2.5-flash",
       contents: text,
       config: {
         systemInstruction: `Role: You are an expert human copywriter. Your ONLY goal is to rewrite the provided text so that it registers as 0% AI-generated on all advanced AI detectors.
@@ -83,8 +94,15 @@ Constraints for Extreme AI Evasion (Perplexity & Burstiness):
 
     res.json({ text: response.text || "" });
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    res.status(500).json({ error: error.message || "Failed to call Gemini API" });
+    console.error("Gemini Humanize API Error:", {
+      message: error.message,
+      stack: error.stack,
+      requestBody: req.body
+    });
+    res.status(500).json({
+      error: "Gemini API Error",
+      details: error.message || "Failed to call Gemini API"
+    });
   }
 });
 
@@ -103,7 +121,7 @@ app.post('/api/detect-ai', async (req, res) => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-pro",
+      model: "gemini-2.5-flash",
       contents: text,
       config: {
         systemInstruction: `Role: You are an expert AI content detector.
@@ -118,25 +136,38 @@ Do not include a percent sign, any letters, extra words, or explanations. Just t
 
     const outputText = response.text?.trim() || "0";
     let aiPercentage = parseInt(outputText, 10);
-    
+
     // Fallback if the AI returned something unparsable
     if (isNaN(aiPercentage)) {
       aiPercentage = 0;
     }
-    
+
     // Clamp to 0-100
     aiPercentage = Math.max(0, Math.min(100, aiPercentage));
 
     res.json({ aiPercentage });
   } catch (error: any) {
-    console.error("Gemini AI Detection Error:", error);
-    res.status(500).json({ error: error.message || "Failed to detect AI probability" });
+    console.error("Gemini AI Detection Error:", {
+      message: error.message,
+      stack: error.stack,
+      textPreview: text?.substring(0, 100)
+    });
+    res.status(500).json({
+      error: "Internal Server Error",
+      details: error.message || "Failed to detect AI probability",
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
 app.get('/api/user', (req, res) => {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  res.json({ is_subscribed: !!req.user.is_subscribed });
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    res.json({ is_subscribed: !!req.user.is_subscribed });
+  } catch (error: any) {
+    console.error("Fetch User Error:", error);
+    res.status(500).json({ error: "Failed to fetch user status" });
+  }
 });
 
 // Lemon Squeezy Checkout Endpoint
@@ -149,7 +180,7 @@ app.post('/api/checkout', async (req, res) => {
   try {
     const apiKey = process.env.LEMON_SQUEEZY_API_KEY;
     const storeId = process.env.LEMON_SQUEEZY_STORE_ID;
-    
+
     if (!apiKey || !storeId) {
       // Mock checkout for demo if no API key is set
       console.warn('No Lemon Squeezy API key or Store ID configured. Using mock checkout URL.');
@@ -246,16 +277,33 @@ app.post('/api/webhooks/lemonsqueezy', (req, res) => {
   }
 });
 
+app.get('/api/health', (req, res) => {
+  console.log('HIT /api/health');
+  res.json({ status: 'ok' });
+});
+
+
+
 async function startServer() {
+  console.log('[SERVER] STARTING...');
+  // Check for critical env vars
+  if (!process.env.GEMINI_API_KEY) {
+    console.warn('WARNING: GEMINI_API_KEY is not set. AI features will fail.');
+  }
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.error('Vite startup error:', e);
+    }
+  } else if (!process.env.VERCEL) {
     app.use(express.static('dist'));
   }
 
@@ -264,8 +312,41 @@ async function startServer() {
   });
 }
 
-if (!process.env.VERCEL) {
-  startServer();
+// Global error handling middleware - MUST be last
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('UNHANDLED ERROR:', err);
+
+  const isApiRequest = req.originalUrl.startsWith('/api/');
+
+  if (isApiRequest) {
+    res.status(err.status || 500).json({
+      error: 'Internal Server Error',
+      message: err.message || 'An unexpected error occurred',
+      path: req.originalUrl
+    });
+  } else {
+    next(err);
+  }
+});
+
+// Global error handler for uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});
+
+// SAFETY WRAP: Catch any module-level or startup crashes to report them in Vercel logs
+try {
+  if (!process.env.VERCEL) {
+    startServer().catch(err => {
+      console.error('[CRITICAL] Server failed to start:', err);
+    });
+  }
+} catch (fatal) {
+  console.error('[FATAL] Top-level server crash:', fatal);
 }
 
 export default app;
