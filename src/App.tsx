@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Copy, Sparkles, Loader2, Check, ArrowRightLeft, Lock } from 'lucide-react';
 import PricingModal from './components/PricingModal';
+import SEO from './components/SEO';
 import { Analytics } from '@vercel/analytics/react';
 
 // Generate a simple unique ID for the user session if one doesn't exist
@@ -185,6 +186,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f5f5f5] text-zinc-900 font-sans selection:bg-zinc-200">
+      <SEO />
       {/* Header */}
       <header className="bg-white border-b border-zinc-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">

@@ -128,6 +128,58 @@ app.get('/api/user', (req, res) => {
     res.json({ is_subscribed: !!user.is_subscribed });
 });
 
+// Lemon Squeezy Checkout Endpoint
+app.post('/api/checkout', async (req, res) => {
+    const { variantId } = req.body;
+    const user = (req as any).user;
+
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const apiKey = process.env.LEMON_SQUEEZY_API_KEY;
+        const storeId = process.env.LEMON_SQUEEZY_STORE_ID;
+
+        if (!apiKey || !storeId) {
+            console.warn('No Lemon Squeezy config. Using mock checkout URL.');
+            return res.json({ url: `https://demo.lemonsqueezy.com/checkout/buy/${variantId}?checkout[custom][user_id]=${user.id}` });
+        }
+
+        const response = await fetch('https://api.lemonsqueezy.com/v1/checkouts', {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/vnd.api+json',
+                'Content-Type': 'application/vnd.api+json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                data: {
+                    type: "checkouts",
+                    attributes: {
+                        checkout_data: { custom: { user_id: user.id } }
+                    },
+                    relationships: {
+                        store: { data: { type: "stores", id: storeId } },
+                        variant: { data: { type: "variants", id: variantId } }
+                    }
+                }
+            })
+        });
+
+        const data = await response.json();
+        if (data.errors) {
+            const detail = data.errors[0].detail;
+            if (detail === 'The related resource does not exist.') {
+                throw new Error('Invalid Store ID or Variant ID. Check Lemon Squeezy config.');
+            }
+            throw new Error(detail);
+        }
+
+        res.json({ url: data.data.attributes.url });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Global error handling middleware - MUST be last
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('VERCEL UNHANDLED ERROR:', err);
