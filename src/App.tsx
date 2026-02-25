@@ -136,7 +136,7 @@ export default function App() {
           <div className="bg-zinc-900 p-2 rounded-lg">
             <ArrowRightLeft className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">AI-to-Human</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Zero Nonsense</h1>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-sm text-zinc-500 hidden sm:block">
@@ -157,7 +157,7 @@ export default function App() {
       <main className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6 h-[calc(100vh-4.5rem)]">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight mb-1">Paraphraser</h2>
+            <h2 className="text-2xl font-semibold tracking-tight mb-1">AI to Human Paraphraser</h2>
             <p className="text-zinc-500 text-sm">Transform robotic AI text into natural, human-like writing.</p>
           </div>
           
