@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Copy, Sparkles, Loader2, Check, ArrowRightLeft, Lock } from 'lucide-react';
-import PricingModal from './components/PricingModal';
+import React, { useState } from 'react';
+import { Copy, Sparkles, Loader2, Check, ArrowRightLeft } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
 
 // Generate a simple unique ID for the user session if one doesn't exist
@@ -21,8 +20,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   const [userId] = useState(getUserId());
-  const [isSubscribed, setIsSubscribed] = useState<boolean | null>(null);
-  const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [isSubscribed] = useState(true);
 
   const [inputAiScore, setInputAiScore] = useState<number | null>(null);
   const [outputAiScore, setOutputAiScore] = useState<number | null>(null);
@@ -30,27 +28,8 @@ export default function App() {
   const [isDetectingOutput, setIsDetectingOutput] = useState(false);
 
   const [selectedTone, setSelectedTone] = useState('Standard');
+  const [strength, setStrength] = useState(70); // Default strength 70%
   const tones = ['Standard', 'Friendly', 'Professional', 'Narrator'];
-
-  useEffect(() => {
-    // Check subscription status on load
-    fetch('/api/user', {
-      headers: { 'x-user-id': userId }
-    })
-      .then(async res => {
-        const contentType = res.headers.get('content-type');
-        if (!res.ok || !contentType || !contentType.includes('application/json')) {
-          throw new Error('Server error');
-        }
-        return res.json();
-      })
-      .then(data => {
-        if (data.is_subscribed !== undefined) {
-          setIsSubscribed(data.is_subscribed);
-        }
-      })
-      .catch(err => console.error('Failed to fetch user status:', err));
-  }, [userId]);
 
   const getWordCount = (text: string) => {
     const trimmed = text.trim();
@@ -58,10 +37,9 @@ export default function App() {
   };
 
   const wordCount = getWordCount(inputText);
-  const isOverLimit = wordCount > 100 && !isSubscribed;
 
   const handleHumanize = async () => {
-    if (!inputText.trim() || isOverLimit) return;
+    if (!inputText.trim()) return;
 
     setIsLoading(true);
     setError('');
@@ -71,7 +49,7 @@ export default function App() {
 
     // Fire off input score detection
     setIsDetectingInput(true);
-    const detectInputPromise = fetch('/api/detect-ai', {
+    fetch('/api/detect-ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
       body: JSON.stringify({ text: inputText })
@@ -101,7 +79,7 @@ export default function App() {
           'Content-Type': 'application/json',
           'x-user-id': userId
         },
-        body: JSON.stringify({ text: inputText, tone: selectedTone })
+        body: JSON.stringify({ text: inputText, tone: selectedTone, strength })
       });
 
       const contentType = response.headers.get('content-type');
@@ -115,7 +93,6 @@ export default function App() {
           } else {
             const errorText = await response.text();
             console.error('Non-JSON Server Response:', errorText.substring(0, 1000));
-            // Check if it looks like typical Vercel/Cloudflare/Hosting error HTML
             if (errorText.includes('<html') || errorText.includes('<!DOCTYPE')) {
               errorMessage = `Server Error: Received an HTML response instead of JSON. (Status: ${response.status})`;
             } else {
@@ -136,7 +113,6 @@ export default function App() {
       }
 
       const data = await response.json();
-
       const generatedText = data.text;
       setOutputText(generatedText);
 
@@ -183,6 +159,14 @@ export default function App() {
     }
   };
 
+  const handleClear = () => {
+    setInputText('');
+    setOutputText('');
+    setInputAiScore(null);
+    setOutputAiScore(null);
+    setError('');
+  };
+
   return (
     <div className="min-h-screen bg-[#f5f5f5] text-zinc-900 font-sans selection:bg-zinc-200">
       {/* Header */}
@@ -193,18 +177,8 @@ export default function App() {
           </div>
           <h1 className="text-xl font-semibold tracking-tight">AI-to-Human</h1>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="text-sm text-zinc-500 hidden sm:block">
-            Bypass detectors with natural, bursty writing.
-          </div>
-          {!isSubscribed && isSubscribed !== null && (
-            <button
-              onClick={() => setIsPricingOpen(true)}
-              className="text-sm font-medium text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-full transition-colors"
-            >
-              Upgrade to Pro
-            </button>
-          )}
+        <div className="text-sm text-zinc-500 hidden sm:block">
+          Bypass detectors with natural, bursty writing.
         </div>
       </header>
 
@@ -216,51 +190,62 @@ export default function App() {
             <p className="text-zinc-500 text-sm">Transform robotic AI text into natural, human-like writing.</p>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            {isOverLimit && (
-              <div className="flex items-center gap-3 bg-red-50 text-red-700 px-4 py-2 rounded-full text-sm font-medium border border-red-100 animate-in fade-in slide-in-from-right-4">
-                <Lock className="w-4 h-4" />
-                <span>Limit exceeded: Max 100 words</span>
-                <button
-                  onClick={() => setIsPricingOpen(true)}
-                  className="bg-red-600 text-white px-3 py-1 rounded-full text-xs hover:bg-red-700 transition-colors ml-1 shadow-sm"
-                >
-                  Upgrade for $2/mo
-                </button>
-              </div>
-            )}
-
-            <button
-              onClick={handleHumanize}
-              disabled={isLoading || !inputText.trim() || isOverLimit}
-              className="flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white px-6 py-2.5 rounded-full font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm active:scale-95 whitespace-nowrap"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              Humanize Text
-            </button>
-          </div>
+          <button
+            onClick={handleHumanize}
+            disabled={isLoading || !inputText.trim()}
+            className="flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white px-6 py-2.5 rounded-full font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm active:scale-95 whitespace-nowrap"
+          >
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            Humanize Text
+          </button>
         </div>
 
-        {/* Tone Selector */}
-        <div className="flex bg-white rounded-xl shadow-sm border border-zinc-200 p-1.5 w-full sm:w-max mx-auto sm:mx-0">
-          {tones.map(tone => (
-            <button
-              key={tone}
-              onClick={() => setSelectedTone(tone)}
-              className={`flex-1 sm:flex-none px-5 py-2 rounded-lg text-sm font-medium transition-all ${selectedTone === tone
-                ? 'bg-zinc-900 text-white shadow-sm'
-                : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-                }`}
-            >
-              {tone}
-            </button>
-          ))}
+        {/* Controls Row */}
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+          <div className="flex bg-white rounded-xl shadow-sm border border-zinc-200 p-1 w-full md:w-max">
+            {tones.map(tone => (
+              <button
+                key={tone}
+                onClick={() => setSelectedTone(tone)}
+                className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedTone === tone
+                  ? 'bg-zinc-900 text-white shadow-sm'
+                  : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
+                  }`}
+              >
+                {tone}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex bg-white rounded-xl shadow-sm border border-zinc-200 p-3 items-center gap-4 w-full md:w-96">
+            <div className="flex flex-col flex-1 gap-1">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-semibold text-zinc-500 uppercase">Humanization Strength</span>
+                <span className="text-xs font-bold text-zinc-900">{strength}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={strength}
+                onChange={(e) => setStrength(parseInt(e.target.value))}
+                className="w-full h-1.5 bg-zinc-100 rounded-lg appearance-none cursor-pointer accent-zinc-900"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={handleClear}
+            className="w-full md:w-auto px-6 py-2.5 text-sm font-medium text-zinc-600 hover:text-zinc-900 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-full transition-all"
+          >
+            Clear All
+          </button>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
           {/* Input */}
-          <div className={`flex-1 flex flex-col bg-white rounded-2xl shadow-sm border overflow-hidden transition-colors ${isOverLimit ? 'border-red-300 ring-1 ring-red-300' : 'border-zinc-200'}`}>
-            <div className={`px-5 py-3 border-b flex justify-between items-center ${isOverLimit ? 'bg-red-50/50 border-red-100' : 'bg-zinc-50/50 border-zinc-100'}`}>
+          <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden transition-colors">
+            <div className="px-5 py-3 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
               <h2 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">Input AI Text</h2>
               <div className="flex items-center gap-3">
                 {isDetectingInput && (
@@ -278,8 +263,8 @@ export default function App() {
                     AI Detected: {inputAiScore}%
                   </span>
                 )}
-                <span className={`text-xs font-mono px-2.5 py-1 rounded-md ${isOverLimit ? 'bg-red-100 text-red-700 font-bold' : 'bg-zinc-100 text-zinc-500'}`}>
-                  {wordCount} {isSubscribed ? 'words' : '/ 100 words'}
+                <span className="text-xs font-mono px-2.5 py-1 rounded-md bg-zinc-100 text-zinc-500">
+                  {wordCount} words
                 </span>
               </div>
             </div>
@@ -345,11 +330,6 @@ export default function App() {
         </div>
       </main>
 
-      <PricingModal
-        isOpen={isPricingOpen}
-        onClose={() => setIsPricingOpen(false)}
-        userId={userId}
-      />
       <Analytics />
     </div>
   );
