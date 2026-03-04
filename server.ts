@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { getUser } from './server/db';
+import nodemailer from 'nodemailer';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3005;
@@ -78,11 +79,13 @@ Core Pillars of Human Writing:
 
 1. Dynamic Burstiness: Humans do not write in uniform lengths. You MUST vary sentence length aggressively. Mix long, descriptive, multi-clause sentences (35+ words) with short, blunt sentences (3-7 words). 
 
-2. Unpredictable Perplexity: Avoid the "orderly" progression of AI. Use varied sentence openings. Don't start every sentence with the Subject. Use introductory phrases, conjunctions (And, But, Yet), and parenthetical asides—like this—to break the robotic rhythm.
+2. Unpredictable Perplexity: Avoid the "orderly" progression of AI. Use varied sentence openings. Don't start every sentence with the Subject. Use introductory phrases, conjunctions (And, But, Yet), and parenthetical asides to break the robotic rhythm.
 
 3. Vocabulary Authenticity: AI loves words like "tapestry", "delve", "pivotal", "vibrant", "comprehensive", and "meticulous". DELETE THEM. Use precise, earthy, and sometimes slightly informal English. Use "huge" instead of "substantial", "look into" instead of "delve", "key" instead of "crucial".
 
-4. Human Flow: Use em-dashes (—) and semicolons naturally. Start sentences with conjunctions frequently. Remove all "filler" phrases typical of AI summaries (e.g., "In conclusion", "Ultimately", "It is important to note").
+4. Human Flow: Start sentences with conjunctions frequently. Use commas, periods, and semicolons for natural pauses. Remove all "filler" phrases typical of AI summaries (e.g., "In conclusion", "Ultimately", "It is important to note").
+
+5. STRICT DASH BAN: NEVER use em-dashes (—), en-dashes (–), or any form of dash as punctuation. These are a hallmark of AI-generated content. Instead, use commas, periods, semicolons, or restructure the sentence. If a dash exists in the input text, replace it with a comma or split into two sentences.
 
 Constraint: Output ONLY the rewritten text. No preamble, no explanation. Preserve the EXACT original perspective and meaning.`,
         temperature: 1.0 + (strength / 100) * 0.5, // Temperature increases with strength for more randomness
@@ -91,7 +94,15 @@ Constraint: Output ONLY the rewritten text. No preamble, no explanation. Preserv
       },
     });
 
-    res.json({ text: response.text || "" });
+    // Post-process: strip any em-dashes, en-dashes that slipped through
+    let cleanedText = (response.text || "")
+      .replace(/—/g, ', ')   // em-dash → comma
+      .replace(/–/g, ', ')   // en-dash → comma  
+      .replace(/\s*,\s*,/g, ',')  // clean up double commas
+      .replace(/\s+/g, ' ')       // normalize whitespace
+      .trim();
+
+    res.json({ text: cleanedText });
   } catch (error: any) {
     console.error("Gemini Humanize API Error:", error.message);
     res.status(500).json({
@@ -146,6 +157,67 @@ Output ONLY a single integer between 0 and 100. No text, no symbols.`,
 
 app.get('/api/user', (req, res) => {
   res.json({ is_subscribed: true });
+});
+
+// Contact form endpoint
+app.post('/api/contact', async (req, res) => {
+  const { name, email, type, message } = req.body;
+
+  if (!name?.trim() || !email?.trim() || !message?.trim()) {
+    return res.status(400).json({ error: 'All fields are required.' });
+  }
+
+  const contactEmail = process.env.CONTACT_EMAIL || 'akfskk2001@gmail.com';
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  if (!smtpUser || !smtpPass) {
+    console.error('SMTP_USER or SMTP_PASS not configured.');
+    return res.status(500).json({ error: 'Email service is not configured on the server.' });
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: smtpUser,
+        pass: smtpPass,
+      },
+    });
+
+    const typeLabels: Record<string, string> = {
+      suggestion: '💡 Suggestion',
+      bug: '🐛 Bug Report',
+      feature: '🚀 Feature Request',
+      project: '🤝 Project Idea',
+      other: '📩 Other',
+    };
+
+    await transporter.sendMail({
+      from: `"Zero Nonsense Contact" <${smtpUser}>`,
+      to: contactEmail,
+      replyTo: email,
+      subject: `[Zero Nonsense] ${typeLabels[type] || type} from ${name}`,
+      html: `
+        <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+          <div style="background: #18181b; padding: 20px 24px; border-radius: 12px 12px 0 0;">
+            <h2 style="color: #fff; margin: 0; font-size: 18px;">New Contact Form Submission</h2>
+          </div>
+          <div style="background: #fafafa; padding: 24px; border: 1px solid #e4e4e7; border-top: none; border-radius: 0 0 12px 12px;">
+            <p style="margin: 0 0 12px;"><strong>From:</strong> ${name} (${email})</p>
+            <p style="margin: 0 0 12px;"><strong>Type:</strong> ${typeLabels[type] || type}</p>
+            <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 16px 0;" />
+            <p style="margin: 0; white-space: pre-wrap; line-height: 1.6;">${message}</p>
+          </div>
+        </div>
+      `,
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Contact email error:', error.message);
+    res.status(500).json({ error: 'Failed to send your message. Please try again later.' });
+  }
 });
 
 app.get('/api/health', (req, res) => {

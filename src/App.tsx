@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Copy, Sparkles, Loader2, Check, ArrowRightLeft } from 'lucide-react';
+import { Copy, Sparkles, Loader2, Check, ArrowRightLeft, MessageSquare } from 'lucide-react';
+import ContactModal from './components/ContactModal';
 import { Analytics } from '@vercel/analytics/react';
 
 // Generate a simple unique ID for the user session if one doesn't exist
@@ -28,7 +29,8 @@ export default function App() {
   const [isDetectingOutput, setIsDetectingOutput] = useState(false);
 
   const [selectedTone, setSelectedTone] = useState('Standard');
-  const [strength, setStrength] = useState(70); // Default strength 70%
+  const [strength, setStrength] = useState(70);
+  const [isContactOpen, setIsContactOpen] = useState(false);
   const tones = ['Standard', 'Friendly', 'Professional', 'Narrator'];
 
   const getWordCount = (text: string) => {
@@ -177,8 +179,17 @@ export default function App() {
           </div>
           <h1 className="text-xl font-semibold tracking-tight">AI-to-Human</h1>
         </div>
-        <div className="text-sm text-zinc-500 hidden sm:block">
-          Bypass detectors with natural, bursty writing.
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-zinc-500 hidden sm:block">
+            Bypass detectors with natural, bursty writing.
+          </div>
+          <button
+            onClick={() => setIsContactOpen(true)}
+            className="flex items-center gap-1.5 text-sm font-medium text-zinc-600 hover:text-zinc-900 bg-zinc-100 hover:bg-zinc-200 px-3 py-1.5 rounded-full transition-colors"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            Contact
+          </button>
         </div>
       </header>
 
@@ -330,6 +341,7 @@ export default function App() {
         </div>
       </main>
 
+      <ContactModal isOpen={isContactOpen} onClose={() => setIsContactOpen(false)} />
       <Analytics />
     </div>
   );
