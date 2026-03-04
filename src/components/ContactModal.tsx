@@ -6,6 +6,8 @@ interface ContactModalProps {
   onClose: () => void;
 }
 
+const WEB3FORMS_KEY = '3fdeb2d6-60d3-4edd-a5a0-a8de4f8bab12'; // Replace with your key from https://web3forms.com
+
 export default function ContactModal({ isOpen, onClose }: ContactModalProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -37,16 +39,24 @@ export default function ContactModal({ isOpen, onClose }: ContactModalProps) {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/api/contact', {
+      // Sends directly to Web3Forms API — no server credentials needed
+      const response = await fetch('https://api.web3forms.com/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, type, message }),
+        body: JSON.stringify({
+          access_key: WEB3FORMS_KEY,
+          name,
+          email,
+          subject: `[Zero Nonsense] ${type} from ${name}`,
+          message: `Type: ${type}\n\n${message}`,
+          from_name: 'Zero Nonsense Contact Form',
+        }),
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to send message.');
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to send message.');
       }
 
       setIsSuccess(true);

@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import nodemailer from 'nodemailer';
 
 const app = express();
 
@@ -139,67 +138,6 @@ Output ONLY a single integer between 0 and 100. No text, no symbols.`,
 
 app.get('/api/user', (req, res) => {
     res.json({ is_subscribed: true });
-});
-
-// Contact form endpoint
-app.post('/api/contact', async (req, res) => {
-    const { name, email, type, message } = req.body;
-
-    if (!name?.trim() || !email?.trim() || !message?.trim()) {
-        return res.status(400).json({ error: 'All fields are required.' });
-    }
-
-    const contactEmail = process.env.CONTACT_EMAIL || 'akfskk2001@gmail.com';
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-
-    if (!smtpUser || !smtpPass) {
-        console.error('SMTP_USER or SMTP_PASS not configured.');
-        return res.status(500).json({ error: 'Email service is not configured on the server.' });
-    }
-
-    try {
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: smtpUser,
-                pass: smtpPass,
-            },
-        });
-
-        const typeLabels: Record<string, string> = {
-            suggestion: '💡 Suggestion',
-            bug: '🐛 Bug Report',
-            feature: '🚀 Feature Request',
-            project: '🤝 Project Idea',
-            other: '📩 Other',
-        };
-
-        await transporter.sendMail({
-            from: `"Zero Nonsense Contact" <${smtpUser}>`,
-            to: contactEmail,
-            replyTo: email,
-            subject: `[Zero Nonsense] ${typeLabels[type] || type} from ${name}`,
-            html: `
-                <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
-                    <div style="background: #18181b; padding: 20px 24px; border-radius: 12px 12px 0 0;">
-                        <h2 style="color: #fff; margin: 0; font-size: 18px;">New Contact Form Submission</h2>
-                    </div>
-                    <div style="background: #fafafa; padding: 24px; border: 1px solid #e4e4e7; border-top: none; border-radius: 0 0 12px 12px;">
-                        <p style="margin: 0 0 12px;"><strong>From:</strong> ${name} (${email})</p>
-                        <p style="margin: 0 0 12px;"><strong>Type:</strong> ${typeLabels[type] || type}</p>
-                        <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 16px 0;" />
-                        <p style="margin: 0; white-space: pre-wrap; line-height: 1.6;">${message}</p>
-                    </div>
-                </div>
-            `,
-        });
-
-        res.json({ success: true });
-    } catch (error: any) {
-        console.error('Contact email error:', error.message);
-        res.status(500).json({ error: 'Failed to send your message. Please try again later.' });
-    }
 });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
